@@ -9,10 +9,8 @@ def get_args():
     parser.add_argument('--epochs', type=int, default=100, metavar="N", help="Number of epochs.")
     parser.add_argument('--load_height', type=int, default=1024, help="Height of input image.")
     parser.add_argument('--load_width', type=int, default=768, help="Width of input image.")
-    parser.add_argument('--distributed', action='store_true', help="Use Distributed training with multi GPUs.")
     parser.add_argument('--sync_bn', action='store_true', help="Synchronize BatchNorm across all devices. Use when batchsize is small.")
     parser.add_argument('--use_amp', action='store_true', help="Use mixed precision training.")
-    parser.add_argument('--memory_format', type=str, default='channels_first', choices=['channels_last', 'channels_first'], help="Channels last or contiguous.")
 
     parser.add_argument('--use_wandb', action='store_true', help="Use wandb logger.")
     parser.add_argument('--project', type=str, default='VITON-HD', help="Name of wandb project.")

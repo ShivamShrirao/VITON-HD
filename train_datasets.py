@@ -12,6 +12,7 @@ from torchvision.transforms import InterpolationMode
 
 np.seterr(divide='ignore', invalid='ignore')
 
+
 class VITONDataset(data.Dataset):
     def __init__(self, args):
         super().__init__()
@@ -82,24 +83,20 @@ class VITONDataset(data.Dataset):
     def __len__(self):
         return len(self.img_names)
 
+
 class VITONDataLoader:
     def __init__(self, args, dataset):
         super().__init__()
 
-        self.train_sampler = None
-        if args.distributed:
-            self.train_sampler = data.distributed.DistributedSampler(dataset, shuffle=args.shuffle)
-        elif args.shuffle:
-            self.train_sampler = data.sampler.RandomSampler(dataset)
+        self.train_sampler = data.distributed.DistributedSampler(dataset, shuffle=args.shuffle)
 
         self.data_loader = data.DataLoader(
-                dataset, batch_size=args.batch_size, shuffle=(self.train_sampler is None),
-                num_workers=args.workers, pin_memory=True, drop_last=False, sampler=self.train_sampler,
-                collate_fn=lambda x: x
+            dataset, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True, drop_last=False,
+            sampler=self.train_sampler, collate_fn=lambda x: x
         )
         self.dataset = dataset
 
-    def device_augment(self, data_batch, device, memory_format=torch.contiguous_format, angle1_keys=['cloth', 'cloth_mask']):
+    def device_augment(self, data_batch, device, angle1_keys=[]): #'cloth', 'cloth_mask']):
         batch = {}
         flip = torch.randn([]) > 0.5
         rot = torch.randn([]) > 0.5
@@ -107,8 +104,10 @@ class VITONDataLoader:
         angle = 0
         for key in data_batch[0].keys():
             batch[key] = torch.stack([inpd[key].to(device, non_blocking=True)
-                                     for inpd in data_batch]).to(memory_format=memory_format)
-            if flip: batch[key] = TF.hflip(batch[key])
-            if rot: angle = angle1 if key in angle1_keys else angle2
+                                     for inpd in data_batch])
+            if flip:
+                batch[key] = TF.hflip(batch[key])
+            if rot:
+                angle = angle1 if key in angle1_keys else angle2
             batch[key] = TF.rotate(batch[key], float(angle))
         return batch

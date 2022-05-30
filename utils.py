@@ -41,9 +41,8 @@ def synchronize():
 
     dist.barrier()
 
-def cleanup(distributed):
-    if distributed:
-        dist.destroy_process_group()
+def cleanup():
+    dist.destroy_process_group()
 
 def get_world_size():
     if not dist.is_available():
