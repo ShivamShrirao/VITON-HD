@@ -29,6 +29,7 @@ class VITONDataset(data.Dataset):
         cloth = cv2.cvtColor(cloth, cv2.COLOR_BGR2RGB)
         cloth = cv2.resize(cloth, (self.load_width, self.load_height), interpolation=cv2.INTER_LINEAR)
         cloth = torch.from_numpy(cloth)
+        cloth = cloth.permute(2,0,1)
         cloth = (cloth / 127.5).sub_(1)     # [-1,1]
 
         ext = img_name.split('.')[-1]
@@ -46,6 +47,7 @@ class VITONDataset(data.Dataset):
         pose_rgb = cv2.cvtColor(pose_rgb, cv2.COLOR_BGR2RGB)
         pose_rgb = cv2.resize(pose_rgb, (self.load_width, self.load_height), interpolation=cv2.INTER_LINEAR)
         pose_rgb = torch.from_numpy(pose_rgb)
+        pose_rgb = pose_rgb.permute(2,0,1)
         pose_rgb = (pose_rgb / 127.5).sub_(1)   # [-1,1]
 
         # load parsing image
@@ -61,12 +63,14 @@ class VITONDataset(data.Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (self.load_width, self.load_height), interpolation=cv2.INTER_LINEAR)
         img = torch.from_numpy(img)
+        img = img.permute(2,0,1)
         img = (img / 127.5).sub_(1)     # [-1,1]
 
         img_agnostic = cv2.imread(osp.join(self.data_path, 'image-agnostic', img_name), cv2.IMREAD_COLOR)
         img_agnostic = cv2.cvtColor(img_agnostic, cv2.COLOR_BGR2RGB)
         img_agnostic = cv2.resize(img_agnostic, (self.load_width, self.load_height), interpolation=cv2.INTER_LINEAR)
         img_agnostic = torch.from_numpy(img_agnostic)
+        img_agnostic = img_agnostic.permute(2,0,1)
         img_agnostic = (img_agnostic / 127.5).sub_(1)   # [-1,1]
 
         result = {

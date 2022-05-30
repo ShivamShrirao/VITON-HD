@@ -5,12 +5,12 @@ torchrun \
         train.py \
         --use_amp \
         --epochs 100 \
-        --batch_size 24 \
+        --batch_size 2 \
         --project VITON-HD \
         --shuffle \
         --load_height 1024 \
         --load_width 768 \
         --use_wandb \
-        --log_interval 20 \
         --workers 8 \
-        --dataset_dir /home/azureuser/data/docker_data
+        --dataset_dir /home/ubuntu/data/datadrive/docker_data/ \
+        --checkpoint_dir checkpoints/

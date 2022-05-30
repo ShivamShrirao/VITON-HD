@@ -21,26 +21,26 @@ from utils import AverageMeter, cleanup, gen_noise, seed_everything, set_grads, 
 class TrainModel:
     def __init__(self, args):
         self.device = torch.device('cuda', args.local_rank)
-        self.segG = SegGenerator(args, input_nc=args.semantic_nc + 8,
-                                 output_nc=args.semantic_nc).train().to(self.device)
-        self.segD = MultiscaleDiscriminator(args, args.semantic_nc + args.semantic_nc + 8,
-                                            use_sigmoid=args.no_lsgan).train().to(self.device)
+        # self.segG = SegGenerator(args, input_nc=args.semantic_nc + 8,
+        #                          output_nc=args.semantic_nc).train().to(self.device)
+        # self.segD = MultiscaleDiscriminator(args, args.semantic_nc + args.semantic_nc + 8,
+        #                                     use_sigmoid=args.no_lsgan).train().to(self.device)
         self.gmm = GMM(args, inputA_nc=7, inputB_nc=3).train().to(self.device)
         self.loc_net = BoundedGridLocNet(args)
-        args.semantic_nc = 7
+        args.update(dict(semantic_nc=7), allow_val_change=True)
         self.aliasG = ALIASGenerator(args, input_nc=3+3+3).train().to(self.device)
         self.aliasD = MultiscaleDiscriminator(args, 3+3+3+3, use_sigmoid=args.no_lsgan,
                                               getIntermFeat=True).train().to(self.device)
-        args.semantic_nc = 13
+        args.update(dict(semantic_nc=13), allow_val_change=True)
 
         dist.init_process_group(backend="nccl")
         if args.sync_bn:
-            self.segG = nn.SyncBatchNorm.convert_sync_batchnorm(self.segG)
-            self.segD = nn.SyncBatchNorm.convert_sync_batchnorm(self.segD)
+            # self.segG = nn.SyncBatchNorm.convert_sync_batchnorm(self.segG)
+            # self.segD = nn.SyncBatchNorm.convert_sync_batchnorm(self.segD)
             self.gmm = nn.SyncBatchNorm.convert_sync_batchnorm(self.gmm)
             self.aliasG = nn.SyncBatchNorm.convert_sync_batchnorm(self.aliasG)
-        self.segG = DDP(self.segG, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
-        self.segD = DDP(self.segD, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
+        # self.segG = DDP(self.segG, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
+        # self.segD = DDP(self.segD, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
         self.gmm = DDP(self.gmm, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
         self.aliasG = DDP(self.aliasG, device_ids=[args.local_rank],
                           output_device=args.local_rank, broadcast_buffers=False)
@@ -53,9 +53,9 @@ class TrainModel:
         self.l1_loss = nn.L1Loss()
         self.vgg_loss = VGGLoss().requires_grad_(False).to(self.device)
 
-        self.optimizer_seg = optim.Adam(list(self.segG.parameters()) +
-                                        list(self.segD.parameters()), lr=0.0004, betas=(0.5, 0.999))
-        self.optimizer_seg.zero_grad(set_to_none=True)
+        # self.optimizer_seg = optim.Adam(list(self.segG.parameters()) +
+        #                                 list(self.segD.parameters()), lr=0.0004, betas=(0.5, 0.999))
+        # self.optimizer_seg.zero_grad(set_to_none=True)
 
         self.optimizer_gmm = optim.Adam(self.gmm.parameters(), lr=0.0002, betas=(0.5, 0.999))
         self.optimizer_gmm.zero_grad(set_to_none=True)
@@ -123,7 +123,7 @@ class TrainModel:
             img_log['seg_pred'] = (parse_pred_mx.detach_()*(255/args.semantic_nc)).cpu().numpy()
         return seg_lossG.detach_(), seg_lossD.detach_(), img_log
 
-    def gmm_train_step(self, args, img, img_agnostic, parse, pose, cloth, cloth_mask, get_img_log=False):
+    def gmm_train_step(self, args, img, img_agnostic, parse, pose, cloth, cloth_mask, get_img_log=False, train=True):
         # Part 2. Clothes Deformation
         with amp.autocast(enabled=args.use_amp):
             cloth_mask_target = parse[:, 3:4]
@@ -135,20 +135,24 @@ class TrainModel:
             gmm_input = torch.cat((parse_cloth_gmm, pose_gmm, agnostic_gmm), dim=1)
             theta, warped_grid = self.gmm(gmm_input, c_gmm)
             # second-order difference constraint
-            rx_loss, ry_loss, cx_loss, cy_loss, rg_loss, cg_loss = self.loc_net(theta)
             warped_c = F.grid_sample(cloth, warped_grid, padding_mode='border')
             warped_cm = F.grid_sample(cloth_mask, warped_grid, padding_mode='border')
-            gmm_loss = self.l1_loss(warped_c, cloth_target) + self.l1_loss(warped_cm, cloth_mask_target) \
-                + torch.mean(0.04*(rx_loss+ry_loss+cx_loss+cy_loss+rg_loss+cg_loss))
+            if train:
+                rx_loss, ry_loss, cx_loss, cy_loss, rg_loss, cg_loss = self.loc_net(theta)
+                gmm_loss = self.l1_loss(warped_c, cloth_target) + self.l1_loss(warped_cm, cloth_mask_target) \
+                    + torch.mean(0.04*(rx_loss+ry_loss+cx_loss+cy_loss+rg_loss+cg_loss))
+            else:
+                gmm_loss = torch.zeros(1)
 
-        self.scaler.scale(gmm_loss).backward()
-        self.scaler.step(self.optimizer_gmm)
-        self.optimizer_gmm.zero_grad(set_to_none=True)
+        if train:
+            self.scaler.scale(gmm_loss).backward()
+            self.scaler.step(self.optimizer_gmm)
+            self.optimizer_gmm.zero_grad(set_to_none=True)
         img_log = {}
         if get_img_log:
             img_log['gmm_real'] = (127.5*(cloth_target+1)).type(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
             img_log['gmm_pred'] = (127.5*(warped_c.detach()+1)).type(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
-        return gmm_loss.detach_(), img_log, warped_c, warped_cm
+        return gmm_loss.detach_(), img_log, warped_c.detach(), warped_cm.detach()
 
     def alias_train_step(self, args, img, img_agnostic, parse, pose, warped_c, warped_cm, get_img_log=False):
         # Part 3. Try-on synthesis
@@ -190,6 +194,9 @@ class TrainModel:
 
         img_log = {}
         if get_img_log:
+            parse_div_mx = parse_div.argmax(dim=1)
+            img_log['parse_div'] = (parse_div_mx.detach_()*(255/parse_div.size(1))).cpu().numpy()
+            img_log['img_agnostic'] = (127.5*(img_agnostic+1)).type(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
             img_log['alias_real'] = (127.5*(img+1)).type(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
             img_log['alias_pred'] = (127.5*(output.detach()+1)).type(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
         return alias_lossG.detach_(), alias_lossD.detach_(), percept_loss.detach_(), loss_G_GAN_Feat.detach_(), img_log
@@ -205,9 +212,9 @@ class TrainModel:
         fm_losses = AverageMeter()
 
         img_log = {}
-        tsteps = len(self.train_loader.data_loader)
         with tqdm(self.train_loader.data_loader, desc=f"Epoch {epoch:>2}") as pbar:
             for step, batch in enumerate(pbar):
+                get_img_log = False
                 batch = self.train_loader.device_augment(batch, self.device)
                 img = batch['img']
                 img_agnostic = batch['img_agnostic']
@@ -219,19 +226,21 @@ class TrainModel:
                 cloth = ((cloth+1) * cloth_mask) - 1    # mask out the cloth
                 parse_target_down = torch.empty(parse_target_down_idx.size(0), args.semantic_nc, 256, 192,
                                                 dtype=torch.float, device=self.device).fill_(0.)
-                parse_target_down.scatter_(
-                    1, parse_target_down_idx.long(), 1.0)
+                parse_target_down.scatter_(1, parse_target_down_idx.long(), 1.0)
                 parse_agnostic = torch.empty(parse_agnostic_idx.size(0), args.semantic_nc, args.load_height, args.load_width,
                                              dtype=torch.float, device=self.device).fill_(0.)
                 parse_agnostic.scatter_(1, parse_agnostic_idx.long(), 1.0)
                 del parse_target_down_idx, parse_agnostic_idx
 
-                seg_lossG, seg_lossD, seg_img_log = self.segmentation_train_step(args, parse_target_down,
-                                                                                 parse_agnostic, pose, cloth, cloth_mask,
-                                                                                 get_img_log=step == (tsteps-2))
+                if not step % args.img_log_interval:
+                    get_img_log = True
 
-                segG_losses.update(seg_lossG.detach_(), parse_target_down.size(0))
-                segD_losses.update(seg_lossD.detach_(), parse_target_down.size(0))
+                # seg_lossG, seg_lossD, seg_img_log = self.segmentation_train_step(args, parse_target_down,
+                #                                                                  parse_agnostic, pose, cloth, cloth_mask,
+                #                                                                  get_img_log=get_img_log)
+                # img_log.update(seg_img_log)
+                # segG_losses.update(seg_lossG.detach_(), parse_target_down.size(0))
+                # segD_losses.update(seg_lossD.detach_(), parse_target_down.size(0))
 
                 # convert 13 channel body parse to 7 channel parse.
                 parse_target = self.gauss(self.up(parse_target_down))
@@ -246,14 +255,18 @@ class TrainModel:
                 parse = torch.zeros(parse_target.size(0), 7, args.load_height,
                                     args.load_width, dtype=torch.float32, device=self.device)
                 parse.scatter_(1, parse_target, 1.0)
-                gmm_loss, gmm_img_log, warped_c, warped_cm = self.gmm_train_step(args, img, img_agnostic, parse,
-                                                                                 pose, cloth, cloth_mask,
-                                                                                 get_img_log=step == (tsteps-2))
+
+                with torch.no_grad():
+                    gmm_loss, gmm_img_log, warped_c, warped_cm = self.gmm_train_step(args, img, img_agnostic, parse,
+                                                                                    pose, cloth, cloth_mask,
+                                                                                    get_img_log=get_img_log, train=False)
+                img_log.update(gmm_img_log)
                 gmm_losses.update(gmm_loss.detach_(), cloth.size(0))
 
                 alias_lossG, alias_lossD, percept_loss, loss_G_GAN_Feat, alas_img_log = self.alias_train_step(
-                    args, img, img_agnostic, parse, pose, warped_c, warped_cm)
-                
+                    args, img, img_agnostic, parse, pose, warped_c, warped_cm, get_img_log=get_img_log)
+
+                img_log.update(alas_img_log)
                 aliasG_losses.update(alias_lossG)
                 aliasD_losses.update(alias_lossD)
                 percept_losses.update(percept_loss)
@@ -270,53 +283,64 @@ class TrainModel:
                             'percept Loss': float(percept_losses.avg),
                             'fm Loss': float(fm_losses.avg),
                         }
-                        pbar.set_postfix(info)  
+                        pbar.set_postfix(info)
                         if args.use_wandb:
                             wandb.log(info)
+                            if get_img_log:
+                                im_dict = {}
+                                for k in img_log:
+                                    im_dict[k] = []
+                                    for img in img_log[k]:
+                                        im_dict[k].append(wandb.Image(img))
+                                wandb.log(im_dict)
                 self.scaler.update()
-                img_log.update(seg_img_log)
-                img_log.update(gmm_img_log)
-                img_log.update(alas_img_log)
         return img_log
 
     def train_loop(self, args):
         for epoch in range(args.init_epoch, args.epochs+1):
-            img_log = self.train_epoch(args, epoch)
+            self.train_epoch(args, epoch)
             if args.local_rank == 0:
                 if args.use_wandb:
                     wandb.log({'epoch': epoch})
-                    im_dict = {}
-                    for k in img_log:
-                        im_dict[k] = []
-                        for img in img_log[k]:
-                            im_dict[k].append(wandb.Image(img))
-                    wandb.log(im_dict)
-                if not epoch % 5:
+                if not epoch % 1:
                     self.save_models(args)
 
     def save_models(self, args):
         if args.local_rank == 0:
-            torch.save(self.segG.state_dict(), os.path.join(args.checkpoint_dir, "segG.pth"))
-            torch.save(self.segD.state_dict(), os.path.join(args.checkpoint_dir, "segD.pth"))
+            os.makedirs(args.checkpoint_dir, exist_ok=True)
+            # torch.save(self.segG.state_dict(), os.path.join(args.checkpoint_dir, "segG.pth"))
+            # torch.save(self.segD.state_dict(), os.path.join(args.checkpoint_dir, "segD.pth"))
             torch.save(self.gmm.state_dict(), os.path.join(args.checkpoint_dir, "gmm.pth"))
-            torch.save(self.optimizer_seg.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_seg.pth"))
+            torch.save(self.aliasG.state_dict(), os.path.join(args.checkpoint_dir, "aliasG.pth"))
+            torch.save(self.aliasD.state_dict(), os.path.join(args.checkpoint_dir, "aliasD.pth"))
+            # torch.save(self.optimizer_seg.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_seg.pth"))
             torch.save(self.optimizer_gmm.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_gmm.pth"))
+            torch.save(self.opt_aliasG.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasG.pth"))
+            torch.save(self.opt_aliasD.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasD.pth"))
             print("[+] Weights saved.")
 
     def load_models(self, args):
         synchronize()
         map_location = {'cuda:0': f'cuda:{args.local_rank}'}
         try:
-            self.segG.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "segG.pth"), map_location=map_location))
-            self.segD.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "segD.pth"), map_location=map_location))
+            # self.segG.load_state_dict(torch.load(os.path.join(
+            #     args.checkpoint_dir, "segG.pth"), map_location=map_location))
+            # self.segD.load_state_dict(torch.load(os.path.join(
+            #     args.checkpoint_dir, "segD.pth"), map_location=map_location))
             self.gmm.load_state_dict(torch.load(os.path.join(
                 args.checkpoint_dir, "gmm.pth"), map_location=map_location))
-            self.optimizer_seg.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "optimizer_seg.pth"), map_location=map_location))
+            self.aliasG.load_state_dict(torch.load(os.path.join(
+                args.checkpoint_dir, "aliasG.pth"), map_location=map_location))
+            self.aliasD.load_state_dict(torch.load(os.path.join(
+                args.checkpoint_dir, "aliasD.pth"), map_location=map_location))
+            # self.optimizer_seg.load_state_dict(torch.load(os.path.join(
+            #     args.checkpoint_dir, "optimizer_seg.pth"), map_location=map_location))
             self.optimizer_gmm.load_state_dict(torch.load(os.path.join(
                 args.checkpoint_dir, "optimizer_gmm.pth"), map_location=map_location))
+            self.opt_aliasG.load_state_dict(torch.load(os.path.join(
+                args.checkpoint_dir, "opt_aliasG.pth"), map_location=map_location))
+            self.opt_aliasD.load_state_dict(torch.load(os.path.join(
+                args.checkpoint_dir, "opt_aliasD.pth"), map_location=map_location))
             if args.local_rank == 0:
                 print("[+] Weights loaded.")
         except FileNotFoundError as e:
