@@ -1,3 +1,4 @@
+import json
 import os
 
 import numpy as np
@@ -12,10 +13,12 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
 import wandb
-from networks import GMM, ALIASGenerator, BoundedGridLocNet, GANLoss, MultiscaleDiscriminator, SegGenerator, VGGLoss
+from networks import (GMM, ALIASGenerator, BoundedGridLocNet, GANLoss,
+                      MultiscaleDiscriminator, SegGenerator, VGGLoss)
 from train_datasets import VITONDataLoader, VITONDataset
 from train_options import get_args
-from utils import AverageMeter, cleanup, gen_noise, seed_everything, set_grads, synchronize
+from utils import (AverageMeter, cleanup, gen_noise, seed_everything,
+                   set_grads, synchronize)
 
 
 class TrainModel:
@@ -258,8 +261,8 @@ class TrainModel:
 
                 with torch.no_grad():
                     gmm_loss, gmm_img_log, warped_c, warped_cm = self.gmm_train_step(args, img, img_agnostic, parse,
-                                                                                    pose, cloth, cloth_mask,
-                                                                                    get_img_log=get_img_log, train=False)
+                                                                                     pose, cloth, cloth_mask,
+                                                                                     get_img_log=get_img_log, train=False)
                 img_log.update(gmm_img_log)
                 gmm_losses.update(gmm_loss.detach_(), cloth.size(0))
 
@@ -294,18 +297,21 @@ class TrainModel:
                                         im_dict[k].append(wandb.Image(img))
                                 wandb.log(im_dict)
                 self.scaler.update()
-        return img_log
+        return info
 
     def train_loop(self, args):
         for epoch in range(args.init_epoch, args.epochs+1):
-            self.train_epoch(args, epoch)
+            info = self.train_epoch(args, epoch)
+            info['epoch'] = epoch
+            info['args'] = dict(args)
             if args.local_rank == 0:
                 if args.use_wandb:
+                    info['run_id'] = wandb.run.id
                     wandb.log({'epoch': epoch})
                 if not epoch % 1:
-                    self.save_models(args)
+                    self.save_models(args, info=info)
 
-    def save_models(self, args):
+    def save_models(self, args, epoch='latest', info={}):
         if args.local_rank == 0:
             os.makedirs(args.checkpoint_dir, exist_ok=True)
             # torch.save(self.segG.state_dict(), os.path.join(args.checkpoint_dir, "segG.pth"))
@@ -317,6 +323,9 @@ class TrainModel:
             torch.save(self.optimizer_gmm.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_gmm.pth"))
             torch.save(self.opt_aliasG.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasG.pth"))
             torch.save(self.opt_aliasD.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasD.pth"))
+            if info:
+                with open(os.path.join(args.checkpoint_dir, f"{epoch}_info.json"), "w") as f:
+                    json.dump(info, f, indent=4)
             print("[+] Weights saved.")
 
     def load_models(self, args):

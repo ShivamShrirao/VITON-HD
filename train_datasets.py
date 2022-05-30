@@ -1,14 +1,11 @@
 import os
-from os import path as osp
+import os.path as osp
 
 import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-from PIL import Image
 from torch.utils import data
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
 
 np.seterr(divide='ignore', invalid='ignore')
 
