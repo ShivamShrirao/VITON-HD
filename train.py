@@ -122,8 +122,8 @@ class TrainModel:
         img_log = {}
         if get_img_log:
             parse_pred_mx = parse_pred_down.argmax(dim=1)
-            img_log['seg_real'] = (parse_target_mx.detach_()*(255/args.semantic_nc)).cpu().numpy()
-            img_log['seg_pred'] = (parse_pred_mx.detach_()*(255/args.semantic_nc)).cpu().numpy()
+            img_log['seg_real'] = (parse_target_mx.detach_()*(255/parse_pred_down.size(1))).cpu().numpy()
+            img_log['seg_pred'] = (parse_pred_mx.detach_()*(255/parse_pred_down.size(1))).cpu().numpy()
         return seg_lossG.detach_(), seg_lossD.detach_(), img_log
 
     def gmm_train_step(self, args, img, img_agnostic, parse, pose, cloth, cloth_mask, get_img_log=False, train=True):
