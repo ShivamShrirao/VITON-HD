@@ -368,10 +368,10 @@ def main():
         tm = TrainModel(args)
         tm.load_models(args)
         tm.train_loop(args)
-        tm.save_models(args)
     except KeyboardInterrupt:
         print("[!] Keyboard Interrupt! Cleaning up, saving and shutting down.")
     finally:
+        tm.save_models(args)
         cleanup()
 
 
