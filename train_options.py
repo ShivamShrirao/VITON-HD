@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--resume', type=str, default=None, help="ID of wandb run to resume.")
     parser.add_argument('--init_epoch', type=int, default=1, metavar="N", help="Initial epoch.")
     parser.add_argument('--log_interval', type=int, default=20, metavar="N", help="Log per N steps.")
-    parser.add_argument('--img_log_interval', type=int, default=400, metavar="N", help="Log image per N steps.")
+    parser.add_argument('--img_log_interval', type=int, default=200, metavar="N", help="Log image per N steps.")
     parser.add_argument('--seed', type=int, default=3407, metavar="N", help="Random seed.")
     parser.add_argument('--shuffle', type=bool, default=True, help="Shuffle the dataset.")
 
@@ -66,7 +66,7 @@ def get_args():
                 args = wandb.config
                 
     elif args.use_wandb:
-        run = wandb.init(project=args.project, config=args)
+        wandb.init(project=args.project, config=args)
         args = wandb.config
 
     return args

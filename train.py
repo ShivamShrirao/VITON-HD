@@ -259,10 +259,10 @@ class TrainModel:
                                     args.load_width, dtype=torch.float32, device=self.device)
                 parse.scatter_(1, parse_target, 1.0)
 
-                with torch.no_grad():
-                    gmm_loss, gmm_img_log, warped_c, warped_cm = self.gmm_train_step(args, img, img_agnostic, parse,
-                                                                                     pose, cloth, cloth_mask,
-                                                                                     get_img_log=get_img_log, train=False)
+                # with torch.no_grad():
+                gmm_loss, gmm_img_log, warped_c, warped_cm = self.gmm_train_step(args, img, img_agnostic, parse,
+                                                                                    pose, cloth, cloth_mask,
+                                                                                    get_img_log=get_img_log, train=True)
                 img_log.update(gmm_img_log)
                 gmm_losses.update(gmm_loss.detach_(), cloth.size(0))
 
@@ -308,27 +308,28 @@ class TrainModel:
                 if args.use_wandb:
                     info['run_id'] = wandb.run.id
                     wandb.log({'epoch': epoch})
-                if not epoch % 1:
-                    self.save_models(args, info=info)
+                self.save_models(args, 'latest', info=info)
+                if not epoch % 4:
+                    self.save_models(args, epoch, info=info)
 
     def save_models(self, args, epoch='latest', info={}):
         if args.local_rank == 0:
             os.makedirs(args.checkpoint_dir, exist_ok=True)
-            # torch.save(self.segG.state_dict(), os.path.join(args.checkpoint_dir, "segG.pth"))
-            # torch.save(self.segD.state_dict(), os.path.join(args.checkpoint_dir, "segD.pth"))
-            torch.save(self.gmm.state_dict(), os.path.join(args.checkpoint_dir, "gmm.pth"))
-            torch.save(self.aliasG.state_dict(), os.path.join(args.checkpoint_dir, "aliasG.pth"))
-            torch.save(self.aliasD.state_dict(), os.path.join(args.checkpoint_dir, "aliasD.pth"))
-            # torch.save(self.optimizer_seg.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_seg.pth"))
-            torch.save(self.optimizer_gmm.state_dict(), os.path.join(args.checkpoint_dir, "optimizer_gmm.pth"))
-            torch.save(self.opt_aliasG.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasG.pth"))
-            torch.save(self.opt_aliasD.state_dict(), os.path.join(args.checkpoint_dir, "opt_aliasD.pth"))
+            # torch.save(self.segG.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_segG.pth"))
+            # torch.save(self.segD.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_segD.pth"))
+            torch.save(self.gmm.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_gmm.pth"))
+            torch.save(self.aliasG.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_aliasG.pth"))
+            torch.save(self.aliasD.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_aliasD.pth"))
+            # torch.save(self.optimizer_seg.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_optimizer_seg.pth"))
+            torch.save(self.optimizer_gmm.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_optimizer_gmm.pth"))
+            torch.save(self.opt_aliasG.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_opt_aliasG.pth"))
+            torch.save(self.opt_aliasD.state_dict(), os.path.join(args.checkpoint_dir, f"{epoch}_opt_aliasD.pth"))
             if info:
                 with open(os.path.join(args.checkpoint_dir, f"{epoch}_info.json"), "w") as f:
                     json.dump(info, f, indent=4)
             print("[+] Weights saved.")
 
-    def load_models(self, args):
+    def load_models(self, args, epoch='latest'):
         synchronize()
         map_location = {'cuda:0': f'cuda:{args.local_rank}'}
         try:
@@ -337,19 +338,19 @@ class TrainModel:
             # self.segD.load_state_dict(torch.load(os.path.join(
             #     args.checkpoint_dir, "segD.pth"), map_location=map_location))
             self.gmm.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "gmm.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_gmm.pth"), map_location=map_location))
             self.aliasG.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "aliasG.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_aliasG.pth"), map_location=map_location))
             self.aliasD.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "aliasD.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_aliasD.pth"), map_location=map_location))
             # self.optimizer_seg.load_state_dict(torch.load(os.path.join(
-            #     args.checkpoint_dir, "optimizer_seg.pth"), map_location=map_location))
+            #     args.checkpoint_dir, f"{epoch}_optimizer_seg.pth"), map_location=map_location))
             self.optimizer_gmm.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "optimizer_gmm.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_optimizer_gmm.pth"), map_location=map_location))
             self.opt_aliasG.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "opt_aliasG.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_opt_aliasG.pth"), map_location=map_location))
             self.opt_aliasD.load_state_dict(torch.load(os.path.join(
-                args.checkpoint_dir, "opt_aliasD.pth"), map_location=map_location))
+                args.checkpoint_dir, f"{epoch}_opt_aliasD.pth"), map_location=map_location))
             if args.local_rank == 0:
                 print("[+] Weights loaded.")
         except FileNotFoundError as e:
